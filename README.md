@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Asymmetry Research Terminal
 
-## Getting Started
+A Phase 1 research application for options screening and hypothetical payoff analysis. It never places trades. Read [ARCHITECTURE.md](ARCHITECTURE.md) for provider evaluation, schema, modeling limits, API design and roadmap.
 
-First, run the development server:
+## Start locally
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+1. Install and start Docker Desktop.
+2. Copy .env.example to .env and set ALPACA_API_KEY and ALPACA_SECRET_KEY. Set MARKETDATA_API_TOKEN for optional secondary verification. Without credentials the dashboard starts empty.
+3. Run docker compose up --build.
+4. Open http://localhost:3000 (or the port configured by WEB_PORT) and select a ticker, then choose Refresh selected ticker. API documentation is at http://localhost:8000/docs.
+
+The default universe is AAPL, MSFT, NVDA, SPY and TSLA. Each refresh requests Alpaca stock bars and option snapshots; provider quotas apply. The default indicative option feed is not executable. A failed provider request leaves existing observations intact. Data and provider errors are shown rather than replaced with fabricated values.
+
+## Verify
+
+Run npm ci, npm run lint and npm run build for the frontend. With Python 3.12 and backend/requirements.txt installed, run from backend: python -m pytest. Docker Compose includes PostgreSQL. The API runs Alembic migrations at startup. An existing unversioned database is adopted only after its schema is checked against the baseline; a mismatch stops startup without changing research data. Back up the database before future schema upgrades.
+
+## Phase 1 scope and limitations
+
+The dashboard supports chain filters and pagination, an implied-volatility-by-strike chart, and a hypothetical expiration payoff chart. Refreshes are intentionally manual to avoid consuming provider quotas unexpectedly. The default scanner excludes quotes older than 15 minutes; the explicit ?Include stale quotes? control lets you inspect them with freshness labels, including after market hours. Missing bid, ask or implied volatility and indicative feeds are identified in contract details.
+
+The screen sorts IV minus trailing 20-day realized volatility. It does not establish mispricing or a positive expected value. Realized volatility uses unadjusted daily closes: a stock split can create an artificial large return, and a dividend-related price drop can also inflate the measure. Provider corrections and other corporate actions may affect history; validate these inputs before drawing conclusions. Alpaca supports adjusted bars, but this implementation deliberately preserves the current unadjusted series and does not mix adjustment methods. The chart compares provider IV estimates by strike within an expiration; individual quote times may differ.
+
+Payoff uses one long standard option, assumes entry at the displayed ask, and calculates intrinsic value at expiration minus premium. Alpaca indicative quotes are estimates and are not executable. The calculation excludes fees, early exercise, assignment, and tax; it is hypothetical. Scheduled ingestion and historical backtesting are not implemented; the local paper portfolio is described below. Phase 2 research functionality is described below.
+
+## Alpaca and MarketData.app integration
+
+Alpaca is the default primary provider. Put ALPACA_API_KEY and ALPACA_SECRET_KEY in .env; the default stock feed is IEX and the options feed is indicative. Indicative prices are not executable. Set MARKETDATA_API_TOKEN to enable the explicitly requested single-contract verification action. The optional Alpha Vantage integration remains available with PRIMARY_MARKET_DATA_PROVIDER=alphavantage and ALPHA_VANTAGE_API_KEY. Switching providers is explicit; there is no automatic fallback.
+
+Alpaca bars and option snapshots are stored separately from the legacy data, preserving provider, feed, quote and retrieval timestamps, prices, sizes, IV and available Greeks. Option chain snapshots may not supply volume or open interest, which remain unknown rather than zero. Scanner defaults to 90–548 days to expiry and excludes stale observations, invalid spreads, and missing IV; change max_spread, min_open_interest or include_stale on GET /scan. An indicative quote does not establish an executable entry price. The expiration scenarios API accepts user-supplied probabilities and transaction cost; it does not infer probabilities.
+
+MarketData.app verification makes one request only after an explicit action. It reports timestamp skew and differences, and never assumes the providers observed the same market at the same time. The API also accepts historical_date on the verification endpoint when the account permits it. MarketData.app reports historical pricing for its free tier; delayed/live availability and historical access depend on current plan and entitlement. A free account has a documented 100 daily credits; quote requests can consume credits and quota responses are not retried. See the [provider freshness documentation](https://www.marketdata.app/docs/account/data-freshness/) and [rate limits](https://www.marketdata.app/docs/api/rate-limiting/). [Alpaca Basic](https://docs.alpaca.markets/us/docs/about-market-data-api) provides IEX stocks and indicative options, with rate and historical restrictions. Check actual entitlements and licensing.
+
+Historical Alpaca option trades can be requested through the API for a known contract and bounded period. The installed SDK does not expose historical option quotes; no historical backtest is claimed. Stock snapshots are exposed via the API. Broker-connected paper order functionality, automatic fallback, and cache-backed request batching are not implemented. ENABLE_PAPER_TRADING is reserved and does not enable order submission. Data remains dependent on provider availability, permissions, and terms.
+
+Frontend tooltip browser tests: install Chromium with npx playwright install chromium, start the dashboard, and run npm run test:ui. Set TEST_BASE_URL if the dashboard is not running on port 3100.
+
+## Phase 2: research
+
+The Research section retrieves recent SEC filing text and Alpaca news headlines and summaries for the selected security. Set SEC_USER_AGENT in .env to an identifying name or organization and contact email (for example, Research App contact@example.com). SEC retrieval is manual, rate-limited, and limited to the first three supported recent filings; some securities, including funds, may not map to a company CIK. The stored text can be an excerpt rather than a complete filing. Alpaca news uses the existing Alpaca credentials and stores the provider headline and summary, not the full article. Each source links to its original.
+
+Optionally configure LLM_BASE_URL (an OpenAI-compatible API base URL ending in /v1), LLM_MODEL, and LLM_API_KEY in .env, then run docker compose up -d api. Source excerpts selected in the dashboard are sent to that configured provider when Generate research report is clicked; check the provider's terms and costs. The model layer uses its chat completions JSON interface and does not support every provider-specific API. Local compatible endpoints must be reachable from inside the API container. Never put API secrets in frontend code.
+
+Research reports are qualitative AI-generated interpretations, not verified predictions. The service rejects reports with unknown source IDs, missing exact quotes, malformed structured output, or numeric narrative estimates. A matching quotation does not prove that a conclusion is supported; review the cited source and any contradictory evidence. The AI sees at most the first 6,000 characters of each selected saved source, so omitted context may matter. It does not calculate event probabilities or generate price targets. Reports and source snapshots are saved in PostgreSQL with their source IDs and model configuration; prior versions are preserved.
+
+Source and report retrieval require an explicit action. News or SEC failures are shown separately, and missing SEC or model configuration does not prevent using the rest of the application. No actual trades are placed. Model and SEC access still require live verification with your own configuration.
+
+## Phase 3: watchlist and scenarios
+
+Select a contract in the chain or screen and choose Add to watchlist. Open the watchlist entry to enter your own expiration prices, probabilities, entry premium, and per-contract costs. Inputs are blank until supplied, and probabilities must total 100%. Results are hypothetical for one long standard option. At expiration the model uses intrinsic value; before expiration it uses a European Black-Scholes-Merton estimate with user-entered annual volatility for each scenario, sale date, continuously compounded risk-free rate, and continuous dividend yield. US equity options are generally American-style, so the model does not capture early-exercise value or discrete dividends; it does not model future spreads or guarantee an executable price. The sensitivity table varies bullish and bearish probabilities while holding the user-entered neutral probability fixed; its break-even threshold is conditional on the entered outcomes and costs. No probability, event likelihood, or target is inferred by the application.
+
+Save assumptions creates an immutable version with the calculations and latest available selected-provider quote metadata. Loading a version permits edits; saving again creates a new version. Removing an item archives it; adding the same contract restores its existing assumptions. Saved Alpaca quote history contains observations collected during manual refreshes, not a complete historical market dataset. Quote history is paginated in pages of 100, with Alpaca feeds separated and MarketData.app shown separately; the latest 50 assumption versions are displayed. Current quote snapshots support the Alpaca primary adapter; quote history supports locally saved Alpaca and MarketData.app observations without combining the sources. Another primary provider returns no current snapshot rather than silently substituting Alpaca.
+
+The quantitative screen priority is an illustrative, deterministic sorting aid, not a measure of investment quality. It combines 40% volatility factor (clamped relative IV-versus-RV difference), 40% spread factor (a 0?100 linear score reaching zero at a 50% spread), and 20% completeness (bid, ask, IV, timestamp, volume, open interest, and freshness). Missing or stale inputs reduce completeness. Expected value, catalyst relevance, and evidence quality are not assessed by this score. Existing unadjusted-price, indicative-quote, and data-quality limitations apply.
+
+### Phase 3 research priority
+
+The opportunity screen retains the quantitative score described above. Separately, the watchlist may show a research priority when a fresh primary quote, a price bar no more than seven days old, a non-expired saved scenario, and two user-entered research assessments are present. A rating requires selecting at least one source saved for the same ticker. Your assessments are subjective; source selection does not verify them.
+
+The watchlist priority weights the quantitative score at 50%, a factor derived from your saved scenario expected value at 20%, your catalyst relevance at 15%, and your evidence quality at 15%. The expected-value factor is clamped to 0?100 using 50 + 50 ? (expected value / entry capital including costs). Catalyst low/medium/high map to 0/50/100; evidence weak/mixed/strong map to 0/50/100. These are arbitrary sorting weights, not calibrated probabilities or proof of mispricing. When inputs are missing, a quote or bar is stale, or the saved valuation date has passed, priority is unranked. Sources and dated assessments and scenario versions remain available for review.
+
+Valuations use calendar days divided by 365, one standard contract of 100 shares, fixed user-entered volatility and rates for each scenario, and the given total per-contract transaction cost. No distributions or probabilities are inferred. Scenario sensitivity holds the neutral probability fixed while varying the bullish/bearish split, and the stated break-even probability is conditional on those assumptions. Model quotations are theoretical and can differ materially from market prices.
+
+## Phase 4: paper portfolio and backtest readiness
+
+The paper portfolio is a local ledger, not a brokerage connection. Set a starting cash balance once, select a saved contract, and enter hypothetical opening price, quantity and total fee. Record partial or full hypothetical closes separately. Expired positions remain unvalued until a user explicitly records a paper settlement on or after expiration. No actual trades are transmitted. The account supports long standard options only; prices are per share and each contract is modeled as 100 shares.
+
+Paper cash comes from manually entered fills and fees. Open positions are marked at the latest configured-primary-provider bid only when both sides are valid, the quote is fresh, and the position has not expired. Indicative quotes are not executable; missing, stale, zero-bid, or expired positions are shown as unvalued, and total paper equity and return are unavailable until all open positions can be valued. Realized P&L allocates entry fees proportionally across partial closes. Wins and average return use fully closed positions. Saved valuation snapshots retain quote metadata and assumptions; sampled maximum drawdown considers only the latest 100 complete user-saved snapshots, can miss intraday losses, and is unavailable when any selected snapshot is incomplete. A time-aligned, dividend-adjusted benchmark comparison is explicitly unavailable.
+
+The backtest endpoint intentionally returns incomplete until a validated, point-in-time options quote dataset, survivorship-aware historical universe, point-in-time corporate actions, total-return benchmark, and execution/expiry integration are in place. A deterministic experimental replay and metrics module is tested with synthetic fixtures but is not exposed as a completed backtest. The system does not treat indicative snapshots as executable historical quotes or invent missing prices. Alpaca documents historical options from February 2024 and describes its free indicative feed as derived, non-OPRA prices; coverage and entitlements require verification. See https://docs.alpaca.markets/us/docs/historical-option-data and https://www.marketdata.app/docs/api/options/quotes/.
+
+The historical data sample button makes one filtered MarketData chain request for one AAPL call strike and expiration. It can consume provider credits, reports only field presence, and does not save or validate a dataset. A successful sample does not prove broader coverage or executable prices. MarketData documents that historical chains omit implied volatility and Greeks, so the current volatility-based signal cannot be replayed directly with that feed. A reconstructed volatility estimate would need its own independently validated assumptions and would be a different signal. See https://www.marketdata.app/docs/api/options/chain/ and https://www.marketdata.app/docs/api/rate-limiting/.
+
+### Import OptionsDX research data
+
+Place the downloaded `.7z`, `.csv`, or `.txt` files in `backend`, then from that directory run (Windows PowerShell):
+
+```powershell
+..\.venv\Scripts\python.exe -m app.optionsdx_import --ticker AAPL aapl_eod_2023q1-fslib7.7z
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Pass multiple filenames to import them in order. The required ticker is supplied by the user because these files do not identify their underlying; verify it against the download before importing. Archives require a `tar` executable that supports 7z, or can be extracted separately and imported as text. The command creates `backend/data/optionsdx.sqlite`, an isolated local SQLite research database, not the Docker PostgreSQL database. Each row is split into call and put observations, with timestamps, underlying price, quote sizes, provider IV and a SHA-256 archive provenance record. Missing IV remains NULL. Re-importing the same file for the same ticker is skipped; overlapping observations from a different file fail and roll back that file. Each archive commits independently. An import does not validate quote quality, historical availability, corporate actions, execution assumptions, or backtest readiness.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+SPY end-of-day archives can provide a price-only benchmark. Import their underlying observations separately, for example `..\.venv\Scripts\python.exe -m app.optionsdx_benchmark data/quarterlies/spy_eod_2020-kwe0mi.7z`. This validates agreement between the underlying prices and timestamps across each day's rows, saves only those prices with source hashes, and stops on conflicting overlapping files. It assumes the user provides SPY files; the file rows do not identify the underlying.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The historical backtesting panel offers separate single-stock exploratory replays for AAPL, NVDA, and TSLA using imported 2020–2023 data, mounted read-only into the API container. Import the relevant stock files with the matching `--ticker` before selecting that stock. The replay uses provider IV and the existing heuristic ranking, 20 observed prior-session returns, one long contract, a five-observed-session hold, and the following day's observed ask for entry and bid for exit. User-entered fees apply on each side. It stops if an open position cannot be marked, an entry cannot be priced, an entry exceeds cash, or SPY and stock dates or timestamps disagree. It does not model settlement. A test cannot cross a known stock split; earlier prices are adjusted only in the trailing volatility window after the split. Known split effective dates are AAPL 2020-08-31 (4:1), NVDA 2021-07-20 (4:1), TSLA 2020-08-31 (5:1) and 2022-08-25 (3:1). Adjusted option contract identities cannot be verified from the imported fields. Other missing dates, quote freshness/execution, publication timing, and corporate actions remain unverified. The benchmark is SPY's price return excluding dividends and investment costs. The user selects the period; it is not independently calibrated or automatically out-of-sample. Current selection of individual stocks introduces selection bias. The general validated backtest remains blocked. A separate small-sample European-model IV comparison uses illustrative fixed interest and dividend assumptions; it is not used to fill missing IV in the replay, and is not a validated American-option valuation.

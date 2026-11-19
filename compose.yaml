@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: scanner
+      POSTGRES_USER: scanner
+      POSTGRES_PASSWORD: scanner
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scanner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://scanner:scanner@db:5432/scanner
+      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY:-}
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+      MARKETDATA_API_TOKEN: ${MARKETDATA_API_TOKEN:-}
+      SEC_USER_AGENT: ${SEC_USER_AGENT:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      PRIMARY_MARKET_DATA_PROVIDER: ${PRIMARY_MARKET_DATA_PROVIDER:-alpaca}
+      SECONDARY_MARKET_DATA_PROVIDER: ${SECONDARY_MARKET_DATA_PROVIDER:-marketdata}
+      ENABLE_SECONDARY_VERIFICATION: ${ENABLE_SECONDARY_VERIFICATION:-true}
+      ENABLE_PAPER_TRADING: ${ENABLE_PAPER_TRADING:-false}
+      ALPACA_OPTIONS_FEED: ${ALPACA_OPTIONS_FEED:-indicative}
+      ALPACA_STOCK_FEED: ${ALPACA_STOCK_FEED:-iex}
+      CORS_ORIGINS: http://localhost:${WEB_PORT:-3000},http://127.0.0.1:${WEB_PORT:-3000},http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001
+      OPTIONSDX_DATABASE: /research/optionsdx.sqlite
+    volumes:
+      - ./backend/data:/research:ro
+    ports: ["8000:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    build: .
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports: ["${WEB_PORT:-3000}:3000"]
+    depends_on: [api]
+volumes:
+  postgres_data:
+

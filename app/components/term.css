@@ -1,0 +1,43 @@
+.term {
+  display: inline;
+  white-space: normal;
+}
+.term-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: 4px;
+  border: 1px solid var(--color-help-border);
+  border-radius: 50%;
+  background: var(--color-help-background);
+  color: var(--color-help-text);
+  font: 700 11px/1 Arial, sans-serif;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.term-trigger:hover,
+.term-trigger:focus-visible {
+  background: var(--color-help-active);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.term-tooltip {
+  position: fixed;
+  z-index: 10000;
+  display: block;
+  width: min(280px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: #ffffff;
+  color: var(--color-ink);
+  border: 1px solid var(--color-border);
+  font: 400 13px/1.5 Arial, sans-serif;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  box-shadow: var(--shadow-tooltip);
+  pointer-events: none;
+}

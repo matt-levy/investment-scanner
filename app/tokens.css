@@ -1,0 +1,18 @@
+﻿:root {
+  --color-ink: #192b29;
+  --color-muted: #798783;
+  --color-surface: #ffffff;
+  --color-background: #f7f9f6;
+  --color-border: #e6ebe7;
+  --color-accent: #16745d;
+  --color-help-border: #668174;
+  --color-help-background: #ffffff;
+  --color-help-text: #315d4a;
+  --color-help-active: #e1efe6;
+  --color-focus: #75a68b;
+  --color-tooltip: #173b30;
+  --color-on-dark: #ffffff;
+  --radius-control: 5px;
+  --radius-panel: 6px;
+  --shadow-tooltip: 0 5px 18px #102b2730;
+}

@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.env
+__pycache__
+.pytest_cache
+.venv
+**/.pytest_cache
+**/__pycache__
+backend/data/
+backend/*.7z
